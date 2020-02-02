@@ -1,12 +1,23 @@
 extern crate image;
 use std::path::Path;
 use itertools::izip;
+use std::env;
+
+// Overall O'notation of 3n(ish) (n being image size=width*height)
+// I think that's pretty good.
 
 const B_SPACING:usize = 2usize; // Border space
-const IMG_NAME:&str = "mess.png";
+// Maximum number of intialise symbols that can be identified
+const MAX_SYMBOLS:usize = 50usize;
+const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
 
 fn main() {
-    let path = &format!("images/{}",IMG_NAME);
+    let args: Vec<String> = env::args().collect();
+    let img_name = &args[1];
+
+    println!("img_name: {}",img_name);
+
+    let path = &format!("images/{}",img_name);
     let path = Path::new(path);
 
     let img = image::open(path).unwrap().to_luma();
@@ -14,24 +25,30 @@ fn main() {
     let dims = img.dimensions();
     let (width,height) = (dims.0 as usize,dims.1 as usize);
     
-    let img_raw:Vec<u8> = img.clone().into_raw();
+    let img_raw:Vec<u8> = img.into_raw();
     
-    // 2d vector of size of image, each pixel labelled as to which symbol it belongs
+    // 2d vector of size of image, where each pixel will be labelled as to which symbol it belongs
     let mut symbols:Vec<Vec<u8>> = vec!(vec!(1u8;height as usize);width as usize);
     println!("width * height = length : {} * {} = {}",width,height,img_raw.len());
-    // Leave x=0 and y=0 borders as all 0
+    // Leave x=0 and y=0 borders as 1u8:alloc
+    //  It is not that not doing so would cause an error,
+    //  but rather that doing so has no affect.
     for x in 1..width {
         for y in 1..height {
             symbols[x][y] = img_raw[y*width+x] / 255;
-            
         }
     }
-    //u8_vec_vec__prt(&symbols);
+    // Printing can be nice to visualize process.
+    // But for larger images it simply prints useless spam in the console.
+    if width <= 100 && height <= 100 {
+        symbols_intial_prt(&symbols);
+    }
+    
 
-    
-    let mut same_symbols:Vec<Vec<bool>> = vec!(vec!(false;50usize);50usize); // Presume no more than 100 symbols in image
+    // Index [i][t] represents whether symbol i and symbol t link
+    let mut same_symbols:Vec<Vec<bool>> = vec!(vec!(false;MAX_SYMBOLS);MAX_SYMBOLS); 
+    // First symbol labelled as 2u8 since 1u8 is a white pixel.
     let mut symbol_count:u8 = 2u8;
-    
     
     // Sets intial symbol pixels
     for y in 1..height {
@@ -78,12 +95,12 @@ fn main() {
     symbol_count -= 2;
     println!("symbol_count: {}",symbol_count);
     let mut symbols_filtered = get_same_symbols(&same_symbols);
-    println!("symbols_filtered: {:.?}",symbols_filtered);
+    println!("links: {:.?}",symbols_filtered);
 
     // Sets symbol number to unify pixels under
     // Sets all connected numbers to same number
     let mut change_symbols:Vec<u8> =  (2u8..symbol_count+2u8).collect();
-    println!("change_symbols: {:.?}",change_symbols);
+    println!("initial symbols: {:0>2.?}",change_symbols);
     for i in 0..symbols_filtered.len() {
         // Gets lowest symbol in connection
         let connection = symbols_filtered[i];
@@ -103,8 +120,7 @@ fn main() {
             if link.1 == large { link.1 = low; }
         }
     }
-    println!("symbols_filtered: {:.?}",symbols_filtered);
-    println!("change_symbols: {:.?}",change_symbols);
+    println!("unified symbols: {:0>2.?}",change_symbols);
 
     let mut pixels_in_symbols:Vec<Vec<(usize,usize)>> = vec!(Vec::new();symbol_count as usize);
 
@@ -117,8 +133,10 @@ fn main() {
             }
         }
     }
-
-    //u8_vec_vec__prt(&symbols);
+    // Since symbols values will often be >9 half size requirement to print
+    if width <= 75 && height <= 75 {
+        symbols_classified_prt(&symbols);
+    }
 
     // Removes empty lists (for symbols which where unified)
     pixels_in_symbols = pixels_in_symbols.into_iter().filter(|i| i.len()!=0).collect();
@@ -139,7 +157,7 @@ fn main() {
         *border_limits = ((min_x,min_y),(max_x,max_y));
     }
 
-    println!("boarders: {:.?}",borders);
+    // TODO Maybe print borders, can be bit too much data, I dunno
 
     let mut outline_img = image::open(path).unwrap().into_rgb();
 
@@ -184,7 +202,7 @@ fn prt_u8_vec__as_2d((width,height):(usize,usize),vec:&Vec<u8>) -> () {
     println!();
     let shape = (width,height); // shape[0],shape[1]=row,column
     let spacing = 4*shape.0;
-    println!("┌ {: <1$}┐","",spacing);
+    println!("┌ {:<1$}┐","─",spacing);
     for row in 0..shape.1 {
         print!("│ ");
         for col in 0..shape.0 {
@@ -193,7 +211,7 @@ fn prt_u8_vec__as_2d((width,height):(usize,usize),vec:&Vec<u8>) -> () {
         }
         println!("│");
     }
-    println!("└ {:<1$}┘","",spacing);
+    println!("└ {:<1$}┘","─",spacing);
     print!("{:<1$}","",(spacing/2)-1);
     println!("[{},{}]",shape.0,shape.1);
     println!();
@@ -217,21 +235,44 @@ fn get_same_symbols(same_symbols:&Vec<Vec<bool>>) -> Vec<(usize,usize)> {
 
 // Nicely prints Vec<Vec<u8>> as matrix
 #[allow(dead_code,non_snake_case)]
-pub fn u8_vec_vec__prt(matrix:&Vec<Vec<u8>>) -> () {
+pub fn symbols_intial_prt(matrix:&Vec<Vec<u8>>) -> () {
 
     println!();
     let shape = (matrix.len(),matrix[0].len()); // shape[0],shape[1]=row,column
     let spacing = 2*shape.0;
-    println!("┌ {: <1$}┐","",spacing);
+    println!("┌─{:─<1$}┐","",spacing);
     for row in 0..shape.1 {
         print!("│ ");
         for col in 0..shape.0 {
-            print!("{} ",matrix[col][row]);
+            if matrix[col][row] == 1 { print!("{}{}",WHITE_SPACE_SYMBOL,WHITE_SPACE_SYMBOL); }
+            else { print!("{} ",matrix[col][row]); }
+            
             
         }
         println!("│");
     }
-    println!("└ {:<1$}┘","",spacing);
+    println!("└─{:─<1$}┘","",spacing);
+    print!("{:<1$}","",(spacing/2)-1);
+    println!("[{},{}]",shape.0,shape.1);
+    println!();
+}
+#[allow(dead_code,non_snake_case)]
+pub fn symbols_classified_prt(matrix:&Vec<Vec<u8>>) -> () {
+
+    println!();
+    let shape = (matrix.len(),matrix[0].len()); // shape[0],shape[1]=row,column
+    let spacing = 3*shape.0;
+    println!("┌─{:─<1$}┐","",spacing);
+    for row in 0..shape.1 {
+        print!("│ ");
+        for col in 0..shape.0 {
+            // TODO Do the whitespace print better
+            if matrix[col][row] == 1 { print!("{}{}{}",WHITE_SPACE_SYMBOL,WHITE_SPACE_SYMBOL,WHITE_SPACE_SYMBOL); }
+            else { print!("{: >2} ",matrix[col][row]); }
+        }
+        println!("│");
+    }
+    println!("└─{:─<1$}┘","",spacing);
     print!("{:<1$}","",(spacing/2)-1);
     println!("[{},{}]",shape.0,shape.1);
     println!();
