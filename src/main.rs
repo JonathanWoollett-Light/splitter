@@ -4,7 +4,7 @@ use itertools::izip;
 use std::env;
 use image::{ImageBuffer, Rgb,Luma};
 
-// Overall O'notation of 3n(ish) (n being image size=width*height)
+// Overall O'notation of 4n(ish) (n being image size=width*height)
 // I think that's pretty good.
 
 const B_SPACING:usize = 2usize; // Border space
