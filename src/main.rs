@@ -96,7 +96,7 @@ fn main() {
     symbol_count -= 2;
     println!("symbol_count:  {}",symbol_count);
     let mut symbols_filtered = get_same_symbols(&same_symbols);
-    println!("links: {:.?}",symbols_filtered);
+    println!("links:               {:.?}",symbols_filtered);
 
     // Sets symbol number to unify pixels under
     // Sets all connected numbers to same number
@@ -169,7 +169,6 @@ fn main() {
     // Removes empty lists (for symbols which where unified)
     //pixels_in_symbols = pixels_in_symbols.into_iter().filter(|i| i.len()!=0).collect();
     //println!("pixels_in_symbols:\n{:.?}",pixels_in_symbols);
-    println!("pixels_in_symbols[2](4):\n{:.?}",pixels_in_symbols[2]);
     
     // Vec<((min_x,min_y),(max_x,max_y))>
     let mut borders:Vec<((usize,usize),(usize,usize))> = vec!(((0usize,0usize),(0usize,0usize));pixels_in_symbols.len());
@@ -189,7 +188,7 @@ fn main() {
         }
         *border_limits = ((min_x,min_y),(max_x,max_y));
     }
-    println!("borders[2](4):\n{:.?}",borders[2]);
+
     // TODO Maybe print borders, can be bit too much data, I dunno
 
     let mut outline_img = image::open(path).unwrap().into_rgb();
@@ -211,7 +210,9 @@ fn main() {
         max_x = if max_x + B_SPACING >= width { width-1 } else { max_x + B_SPACING };
         max_y = if max_y + B_SPACING >= height { height-1 } else { max_y + B_SPACING };
         
+        // Add spacing to borders
         borders[i] = ((min_x,min_y),(max_x,max_y));
+
         //println!("min,max:({},{}),({},{})",min_x,min_y,max_x,max_y);
 
         let border_pixel = image::Rgb([255,0,0]); // Pixel to use as border
@@ -229,7 +230,6 @@ fn main() {
         *outline_img.get_pixel_mut(max_x as u32,max_y as u32) = border_pixel;
         
     }
-    println!("borders[2](4):\n{:.?}",borders[2]);
 
     outline_img.save("borders.png").unwrap();
     println!("borders: {:.?}",borders);
@@ -241,26 +241,17 @@ fn main() {
     for y in 0..height {
         for x in 0.. width {
             if symbols[x][y] != 1 {
-                //println!("started");
                 let symbol = symbols[x][y] as usize;
                 let offset:(usize,usize) = borders[symbol-2].0;
 
-                //println!("symbol[{}][{}]={}",x,y,symbol);
-                //println!("borders:{:.?}",borders[symbol-2]);
-                // println!("offset:{:.?}",offset);
-                // print!("({},{})",x,y);
-                // print!("-({},{})",offset.0,offset.1);
-                // print!("=({},{})",(x-offset.0),(y-offset.1));
-                // println!("symbol_images[{}].dimensions(): {:.?}",symbol-2,symbol_images[symbol-2].dimensions());
-
                 let pixel = symbol_images[symbol-2].get_pixel_mut((x-offset.0) as u32,(y-offset.1) as u32);
                 *pixel = image::Luma([255]);
-                //println!("done");
             }
         }
     }
 
-    println!("here");
+    // TODO Need to scale symbol images
+
     for i in 0..symbol_images.len() {
         let path = format!("split/{}.png",i);
         symbol_images[i].save(path).unwrap();
@@ -289,12 +280,10 @@ fn prt_u8_vec__as_2d((width,height):(usize,usize),vec:&Vec<u8>) -> () {
 }
 
 fn get_same_symbols(same_symbols:&Vec<Vec<bool>>) -> Vec<(usize,usize)> {
-    print!("links: ");
     let mut links:Vec<(usize,usize)> = Vec::new();
     for i in 0..same_symbols.len() {
         for t in 0..same_symbols[i].len() { // same_symbols[a].len() === same_symbols[b].len()
             if i != t && same_symbols[i][t] {
-                print!("({},{}),",i,t);
                 links.push((i,t))
             }
         }
