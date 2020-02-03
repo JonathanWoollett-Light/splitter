@@ -8,8 +8,8 @@ use image::{ImageBuffer, Rgb,Luma};
 // I think that's pretty good.
 
 const B_SPACING:usize = 2usize; // Border space
-// Maximum number of intialise symbols that can be identified
-const MAX_SYMBOLS:usize = 50usize;
+// Maximum number of intial symbols that can be identified (larger images and more complex symbols require a higher number)
+const MAX_SYMBOLS:usize = 200usize;
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
 
 fn main() {
@@ -41,7 +41,7 @@ fn main() {
     }
     // Printing can be nice to visualize process.
     // But for larger images it simply prints useless spam in the console.
-    if width <= 200 && height <= 200 {
+    if width <= 200 && height <= 400 {
         symbols_intial_prt(&symbols);
     }
     
@@ -145,7 +145,7 @@ fn main() {
 
     let mut pixels_in_symbols:Vec<Vec<(usize,usize)>> = vec!(Vec::new();(counter-1) as usize);
 
-    if width <= 100 && height <= 100 {
+    if width <= 100 && height <= 200 {
         symbols_classified_prt(&symbols);
     }
 
@@ -162,7 +162,7 @@ fn main() {
         }
     }
     // Since symbols values will often be >9 half size requirement to print
-    if width <= 100 && height <= 100 {
+    if width <= 100 && height <= 200 {
         symbols_classified_prt(&symbols);
     }
 
@@ -233,11 +233,14 @@ fn main() {
 
     outline_img.save("borders.png").unwrap();
     println!("borders: {:.?}",borders);
-    let sizes:Vec<(usize,usize)> = borders.iter().map(|lims| ((lims.1).0-(lims.0).0,(lims.1).1-(lims.0).1)).collect();
+    let sizes:Vec<(usize,usize)> = borders.iter().map(|lims| ((lims.1).0-(lims.0).0+1,(lims.1).1-(lims.0).1+1)).collect();
     // Default constructs to all black pixels, thus we set symbol pixels to white in following loop
+    // TODO Look into constructing with default white pixels and drawing black pixels
     let mut symbol_images:Vec<ImageBuffer<Luma<u8>,Vec<u8>>> = sizes.iter().map(|size| ImageBuffer::<Luma<u8>,Vec<u8>>::new(size.0 as u32,size.1 as u32)).collect();
-    
-    
+
+    println!("got here");
+
+    // Draws symbol images
     for y in 0..height {
         for x in 0.. width {
             if symbols[x][y] != 1 {
@@ -302,7 +305,7 @@ pub fn symbols_intial_prt(matrix:&Vec<Vec<u8>>) -> () {
     let spacing = 1*shape.0;
     horizontal_number_line(shape.0);
 
-    println!("   ┌{:─<1$}┐","",spacing);
+    println!("    ┌{:─<1$}┐","",spacing);
     for row in 0..shape.1 {
         vertical_number_line(row);
 
@@ -315,7 +318,7 @@ pub fn symbols_intial_prt(matrix:&Vec<Vec<u8>>) -> () {
         }
         println!("│");
     }
-    println!("   └{:─<1$}┘","",spacing);
+    println!("    └{:─<1$}┘","",spacing);
     print!("   {:<1$}","",(spacing/2)-1);
     println!("   [{},{}]",shape.0,shape.1);
     println!();
@@ -341,8 +344,8 @@ pub fn symbols_intial_prt(matrix:&Vec<Vec<u8>>) -> () {
 
     fn vertical_number_line(row:usize) -> () {
         if row % 10 == 5 {
-            print!("{}",row/ 10);
-        } else { print!(" "); }
+            print!("{: >2}",row/ 10);
+        } else { print!("  "); }
 
         if row % 10 == 0 {
             print!("┌");
@@ -365,7 +368,7 @@ pub fn symbols_classified_prt(matrix:&Vec<Vec<u8>>) -> () {
     
     horizontal_number_line(shape.0);
 
-    println!("   ┌─{:─<1$}┐","",spacing);
+    println!("    ┌─{:─<1$}┐","",spacing);
     for row in 0..shape.1 {
         vertical_number_line(row);
 
@@ -377,7 +380,7 @@ pub fn symbols_classified_prt(matrix:&Vec<Vec<u8>>) -> () {
         }
         println!(" │");
     }
-    println!("   └─{:─<1$}┘","",spacing);
+    println!("    └─{:─<1$}┘","",spacing);
     print!("{:<1$}","",(spacing/2)-1);
     println!("[{},{}]",shape.0,shape.1);
     println!();
@@ -403,8 +406,8 @@ pub fn symbols_classified_prt(matrix:&Vec<Vec<u8>>) -> () {
 
     fn vertical_number_line(row:usize) -> () {
         if row % 10 == 5 {
-            print!("{}",row/ 10);
-        } else { print!(" "); }
+            print!("{: >2}",row/ 10);
+        } else { print!("  "); }
 
         if row % 10 == 0 {
             print!("┌");
