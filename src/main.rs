@@ -2,6 +2,7 @@ extern crate image;
 use std::path::Path;
 use itertools::izip;
 use std::env;
+use image::{ImageBuffer, Rgb,Luma};
 
 // Overall O'notation of 3n(ish) (n being image size=width*height)
 // I think that's pretty good.
@@ -25,7 +26,7 @@ fn main() {
     let dims = img.dimensions();
     let (width,height) = (dims.0 as usize,dims.1 as usize);
     
-    let img_raw:Vec<u8> = img.into_raw();
+    let img_raw:Vec<u8> = img.clone().into_raw();
     
     // 2d vector of size of image, where each pixel will be labelled as to which symbol it belongs
     let mut symbols:Vec<Vec<u8>> = vec!(vec!(1u8;height as usize);width as usize);
@@ -40,7 +41,7 @@ fn main() {
     }
     // Printing can be nice to visualize process.
     // But for larger images it simply prints useless spam in the console.
-    if width <= 100 && height <= 100 {
+    if width <= 200 && height <= 200 {
         symbols_intial_prt(&symbols);
     }
     
@@ -93,14 +94,14 @@ fn main() {
         }
     }
     symbol_count -= 2;
-    println!("symbol_count: {}",symbol_count);
+    println!("symbol_count:  {}",symbol_count);
     let mut symbols_filtered = get_same_symbols(&same_symbols);
     println!("links: {:.?}",symbols_filtered);
 
     // Sets symbol number to unify pixels under
     // Sets all connected numbers to same number
     let mut change_symbols:Vec<u8> =  (2u8..symbol_count+2u8).collect();
-    println!("initial symbols: {:0>2.?}",change_symbols);
+    println!("initial symbols:     {:0>2.?}",change_symbols);
     for i in 0..symbols_filtered.len() {
         // Gets lowest symbol in connection
         let connection = symbols_filtered[i];
@@ -110,7 +111,9 @@ fn main() {
         // Adjusts symbols list
         change_symbols[large-2] = low as u8;
         for val in &mut change_symbols {
-            if *val == large as u8 { *val = low as u8; }
+            if *val == large as u8 { 
+                *val = low as u8;
+            }
         }
 
         // Adjusts connections list
@@ -120,31 +123,61 @@ fn main() {
             if link.1 == large { link.1 = low; }
         }
     }
-    println!("unified symbols: {:0>2.?}",change_symbols);
+    println!("unified symbols:     {:0>2.?}",change_symbols);
 
-    let mut pixels_in_symbols:Vec<Vec<(usize,usize)>> = vec!(Vec::new();symbol_count as usize);
+    // All symbols numbers are now covered by some range 2..x, rather than a series of numbers >=2
+    let mut symbol_to:Vec<u8> = (2u8..symbol_count+2u8).collect();
+    let mut consecutive_symbols:Vec<u8> = change_symbols.clone();
+    let mut max_so_far:u8 = consecutive_symbols[0]; // This might always be 2u8, if so, maybe change this to that
+    let mut counter:u8 = 2u8;
+    for i in 1..consecutive_symbols.len() {
+        if consecutive_symbols[i] > max_so_far {
+            counter += 1;
+            max_so_far = consecutive_symbols[i];
+            symbol_to[consecutive_symbols[i] as usize - 2usize] = counter;
+            consecutive_symbols[i] = counter;
+        }
+        else {
+            consecutive_symbols[i] = symbol_to[consecutive_symbols[i] as usize - 2];
+        }
+    }
+    println!("consecutive symbols: {:0>2.?}",consecutive_symbols);
+
+    let mut pixels_in_symbols:Vec<Vec<(usize,usize)>> = vec!(Vec::new();(counter-1) as usize);
+
+    if width <= 100 && height <= 100 {
+        symbols_classified_prt(&symbols);
+    }
 
     // Unifies symbols and sets lists of pixels in each symbol
     for y in 0..height {
         for x in 0.. width {
             if symbols[x][y] != 1 {
-                symbols[x][y] = change_symbols[symbols[x][y] as usize - 2usize];
-                pixels_in_symbols[(symbols[x][y]-2u8) as usize].push((x,y));
+                let symbol_num = symbols[x][y] as usize - 2usize;
+                let new_symbol_num = consecutive_symbols[change_symbols[symbol_num] as usize - 2usize];
+                symbols[x][y] = new_symbol_num;
+                pixels_in_symbols[new_symbol_num as usize - 2usize].push((x,y));
+                
             }
         }
     }
     // Since symbols values will often be >9 half size requirement to print
-    if width <= 75 && height <= 75 {
+    if width <= 100 && height <= 100 {
         symbols_classified_prt(&symbols);
     }
 
     // Removes empty lists (for symbols which where unified)
-    pixels_in_symbols = pixels_in_symbols.into_iter().filter(|i| i.len()!=0).collect();
+    //pixels_in_symbols = pixels_in_symbols.into_iter().filter(|i| i.len()!=0).collect();
     //println!("pixels_in_symbols:\n{:.?}",pixels_in_symbols);
-
-    let mut borders:Vec<((usize,usize),(usize,usize))> = vec!(((0usize,0usize),(0usize,0usize));pixels_in_symbols.len());
+    println!("pixels_in_symbols[2](4):\n{:.?}",pixels_in_symbols[2]);
     
+    // Vec<((min_x,min_y),(max_x,max_y))>
+    let mut borders:Vec<((usize,usize),(usize,usize))> = vec!(((0usize,0usize),(0usize,0usize));pixels_in_symbols.len());
+
+    println!("pixels_in_symbols.len(): {},",pixels_in_symbols.len());
+
     for (symbol,border_limits) in izip!(pixels_in_symbols,&mut borders) {
+        //print!("{},",symbol.len());
         let (mut min_x,mut min_y) = symbol[0];
         let (mut max_x,mut max_y) = symbol[0];
         for pixel in symbol {
@@ -156,7 +189,7 @@ fn main() {
         }
         *border_limits = ((min_x,min_y),(max_x,max_y));
     }
-
+    println!("borders[2](4):\n{:.?}",borders[2]);
     // TODO Maybe print borders, can be bit too much data, I dunno
 
     let mut outline_img = image::open(path).unwrap().into_rgb();
@@ -169,6 +202,7 @@ fn main() {
 
     // Sets borders
     for i in 0..borders.len() {
+
         let (mut min_x,mut min_y) = borders[i].0;
         let (mut max_x,mut max_y) = borders[i].1;
 
@@ -177,6 +211,7 @@ fn main() {
         max_x = if max_x + B_SPACING >= width { width-1 } else { max_x + B_SPACING };
         max_y = if max_y + B_SPACING >= height { height-1 } else { max_y + B_SPACING };
         
+        borders[i] = ((min_x,min_y),(max_x,max_y));
         //println!("min,max:({},{}),({},{})",min_x,min_y,max_x,max_y);
 
         let border_pixel = image::Rgb([255,0,0]); // Pixel to use as border
@@ -194,7 +229,43 @@ fn main() {
         *outline_img.get_pixel_mut(max_x as u32,max_y as u32) = border_pixel;
         
     }
+    println!("borders[2](4):\n{:.?}",borders[2]);
+
     outline_img.save("borders.png").unwrap();
+    println!("borders: {:.?}",borders);
+    let sizes:Vec<(usize,usize)> = borders.iter().map(|lims| ((lims.1).0-(lims.0).0,(lims.1).1-(lims.0).1)).collect();
+    // Default constructs to all black pixels, thus we set symbol pixels to white in following loop
+    let mut symbol_images:Vec<ImageBuffer<Luma<u8>,Vec<u8>>> = sizes.iter().map(|size| ImageBuffer::<Luma<u8>,Vec<u8>>::new(size.0 as u32,size.1 as u32)).collect();
+    
+    
+    for y in 0..height {
+        for x in 0.. width {
+            if symbols[x][y] != 1 {
+                //println!("started");
+                let symbol = symbols[x][y] as usize;
+                let offset:(usize,usize) = borders[symbol-2].0;
+
+                //println!("symbol[{}][{}]={}",x,y,symbol);
+                //println!("borders:{:.?}",borders[symbol-2]);
+                // println!("offset:{:.?}",offset);
+                // print!("({},{})",x,y);
+                // print!("-({},{})",offset.0,offset.1);
+                // print!("=({},{})",(x-offset.0),(y-offset.1));
+                // println!("symbol_images[{}].dimensions(): {:.?}",symbol-2,symbol_images[symbol-2].dimensions());
+
+                let pixel = symbol_images[symbol-2].get_pixel_mut((x-offset.0) as u32,(y-offset.1) as u32);
+                *pixel = image::Luma([255]);
+                //println!("done");
+            }
+        }
+    }
+
+    println!("here");
+    for i in 0..symbol_images.len() {
+        let path = format!("split/{}.png",i);
+        symbol_images[i].save(path).unwrap();
+    }
+    
 }
 
 #[allow(dead_code,non_snake_case)]
@@ -239,41 +310,122 @@ pub fn symbols_intial_prt(matrix:&Vec<Vec<u8>>) -> () {
 
     println!();
     let shape = (matrix.len(),matrix[0].len()); // shape[0],shape[1]=row,column
-    let spacing = 2*shape.0;
-    println!("┌─{:─<1$}┐","",spacing);
+    let spacing = 1*shape.0;
+    horizontal_number_line(shape.0);
+
+    println!("   ┌{:─<1$}┐","",spacing);
     for row in 0..shape.1 {
-        print!("│ ");
+        vertical_number_line(row);
+
+        print!("│");
         for col in 0..shape.0 {
-            if matrix[col][row] == 1 { print!("{}{}",WHITE_SPACE_SYMBOL,WHITE_SPACE_SYMBOL); }
-            else { print!("{} ",matrix[col][row]); }
+            if matrix[col][row] == 1 { print!("{}",WHITE_SPACE_SYMBOL); }
+            else { print!("{}",matrix[col][row]); }
             
             
         }
         println!("│");
     }
-    println!("└─{:─<1$}┘","",spacing);
-    print!("{:<1$}","",(spacing/2)-1);
-    println!("[{},{}]",shape.0,shape.1);
+    println!("   └{:─<1$}┘","",spacing);
+    print!("   {:<1$}","",(spacing/2)-1);
+    println!("   [{},{}]",shape.0,shape.1);
     println!();
+
+    fn horizontal_number_line(rows:usize) -> () {
+        print!("\n   ");
+        for col in 0..rows/10 {
+            print!("{: <1$}","",4);
+            print!("{: >2}",col);
+            print!("{: <1$}","",4);
+        }
+        print!("\n    ");
+        for _ in 0..rows/10 {
+            print!("┌{:─<1$}┐","",8);
+        }
+        print!("┌{:─<1$}","",rows%10);
+        print!("\n    ");
+        for col in 0..rows {
+            print!("{: >1}",col%10)
+        }
+        println!();
+    }
+
+    fn vertical_number_line(row:usize) -> () {
+        if row % 10 == 5 {
+            print!("{}",row/ 10);
+        } else { print!(" "); }
+
+        if row % 10 == 0 {
+            print!("┌");
+        }
+        else if row % 10 == 9 {
+            print!("└");
+        }
+        else {
+            print!("│");
+        }
+        print!("{}",row % 10);
+    }
 }
 #[allow(dead_code,non_snake_case)]
 pub fn symbols_classified_prt(matrix:&Vec<Vec<u8>>) -> () {
 
     println!();
     let shape = (matrix.len(),matrix[0].len()); // shape[0],shape[1]=row,column
-    let spacing = 3*shape.0;
-    println!("┌─{:─<1$}┐","",spacing);
+    let spacing = 2*shape.0;
+    
+    horizontal_number_line(shape.0);
+
+    println!("   ┌─{:─<1$}┐","",spacing);
     for row in 0..shape.1 {
-        print!("│ ");
+        vertical_number_line(row);
+
+        print!("│");
         for col in 0..shape.0 {
             // TODO Do the whitespace print better
-            if matrix[col][row] == 1 { print!("{}{}{}",WHITE_SPACE_SYMBOL,WHITE_SPACE_SYMBOL,WHITE_SPACE_SYMBOL); }
-            else { print!("{: >2} ",matrix[col][row]); }
+            if matrix[col][row] == 1 { print!(" {}",WHITE_SPACE_SYMBOL); }
+            else { print!("{: >2}",matrix[col][row]); }
         }
-        println!("│");
+        println!(" │");
     }
-    println!("└─{:─<1$}┘","",spacing);
+    println!("   └─{:─<1$}┘","",spacing);
     print!("{:<1$}","",(spacing/2)-1);
     println!("[{},{}]",shape.0,shape.1);
     println!();
+
+    fn horizontal_number_line(rows:usize) -> () {
+        print!("\n   ");
+        for col in 0..rows/10 {
+            print!("{: <1$}","",9);
+            print!("{: >2}",col);
+            print!("{: <1$}","",9);
+        }
+        print!("\n    ");
+        for _ in 0..rows/10 {
+            print!("┌{:─<1$}┐","",2*9);
+        }
+        print!("┌{:─<1$}","",rows%10);
+        print!("\n    ");
+        for col in 0..rows {
+            print!("{: >2}",col%10)
+        }
+        println!();
+    }
+
+    fn vertical_number_line(row:usize) -> () {
+        if row % 10 == 5 {
+            print!("{}",row/ 10);
+        } else { print!(" "); }
+
+        if row % 10 == 0 {
+            print!("┌");
+        }
+        else if row % 10 == 9 {
+            print!("└");
+        }
+        else {
+            print!("│");
+        }
+        print!("{}",row % 10);
+    }
 }
