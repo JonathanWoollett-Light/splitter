@@ -9,8 +9,9 @@ use image::{ImageBuffer, Rgb,Luma};
 
 const B_SPACING:usize = 2usize; // Border space
 // Maximum number of intial symbols that can be identified (larger images and more complex symbols require a higher number)
-const MAX_SYMBOLS:usize = 200usize;
+const MAX_SYMBOLS:usize = 1000usize;
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
+const LUMA_BOUNDARY:u8 = 130u8; // Luma less than set to 0 and more than set to 255.
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -26,34 +27,42 @@ fn main() {
     let dims = img.dimensions();
     let (width,height) = (dims.0 as usize,dims.1 as usize);
     
-    let img_raw:Vec<u8> = img.clone().into_raw();
+    let mut img_raw:Vec<u8> = img.clone().into_raw();
     
     // 2d vector of size of image, where each pixel will be labelled as to which symbol it belongs
-    let mut symbols:Vec<Vec<u8>> = vec!(vec!(1u8;height as usize);width as usize);
-    println!("width * height = length : {} * {} = {}",width,height,img_raw.len());
+    let mut symbols:Vec<Vec<u32>> = vec!(vec!(1u32;height as usize);width as usize);
+    println!("width * height = length : {} * {} = {}|{}k|{}m",width,height,img_raw.len(),img_raw.len()/1000,img_raw.len()/1000000);
     // Leave x=0 and y=0 borders as 1u8:alloc
     //  It is not that not doing so would cause an error,
     //  but rather that doing so has no affect.
     for x in 1..width {
         for y in 1..height {
-            symbols[x][y] = img_raw[y*width+x] / 255;
+            let luma = img_raw[y*width+x];
+            img_raw[y*width+x] = if luma < LUMA_BOUNDARY { 0 } else { 255 };
+            symbols[x][y] = (img_raw[y*width+x] / 255) as u32;
         }
     }
+    println!("Converted image to binary");
+
+    // Debug stuff to check binarisation worked:
+    let check_img:ImageBuffer<Luma<u8>,Vec<u8>> = ImageBuffer::<Luma<u8>,Vec<u8>>::from_raw(width as u32,height as u32,img_raw).unwrap();
+    check_img.save("check_img.png").unwrap();
+
     // Printing can be nice to visualize process.
     // But for larger images it simply prints useless spam in the console.
     if width <= 200 && height <= 400 {
         symbols_intial_prt(&symbols);
     }
     
-
+    
     // Index [i][t] represents whether symbol i and symbol t link
     let mut same_symbols:Vec<Vec<bool>> = vec!(vec!(false;MAX_SYMBOLS);MAX_SYMBOLS); 
     // First symbol labelled as 2u8 since 1u8 is a white pixel.
-    let mut symbol_count:u8 = 2u8;
+    let mut symbol_count:u32 = 2u32;
     
     // Sets intial symbol pixels
-    for y in 1..height {
-        for x in 1..width {
+    for y in 1..height-1 {
+        for x in 1..width-1 {
             if symbols[x][y] == 0 {
                 if symbols[x-1][y] != 1 {
                     symbols[x][y] = symbols[x-1][y];
@@ -87,8 +96,8 @@ fn main() {
                 }
                 // If we haven't assigned to symbol: set new symbol
                 if symbols[x][y] == 0 {
-                    symbols[x][y] = symbol_count as u8;
-                    symbol_count += 1u8;
+                    symbols[x][y] = symbol_count as u32;
+                    symbol_count += 1u32;
                 }
             }
         }
@@ -100,7 +109,7 @@ fn main() {
 
     // Sets symbol number to unify pixels under
     // Sets all connected numbers to same number
-    let mut change_symbols:Vec<u8> =  (2u8..symbol_count+2u8).collect();
+    let mut change_symbols:Vec<u32> =  (2u32..symbol_count+2u32).collect();
     println!("initial symbols:     {:0>2.?}",change_symbols);
     for i in 0..symbols_filtered.len() {
         // Gets lowest symbol in connection
@@ -109,10 +118,10 @@ fn main() {
         else { (connection.1,connection.0) };
 
         // Adjusts symbols list
-        change_symbols[large-2] = low as u8;
+        change_symbols[large-2] = low as u32;
         for val in &mut change_symbols {
-            if *val == large as u8 { 
-                *val = low as u8;
+            if *val == large as u32 { 
+                *val = low as u32;
             }
         }
 
@@ -126,10 +135,10 @@ fn main() {
     println!("unified symbols:     {:0>2.?}",change_symbols);
 
     // All symbols numbers are now covered by some range 2..x, rather than a series of numbers >=2
-    let mut symbol_to:Vec<u8> = (2u8..symbol_count+2u8).collect();
-    let mut consecutive_symbols:Vec<u8> = change_symbols.clone();
-    let mut max_so_far:u8 = consecutive_symbols[0]; // This might always be 2u8, if so, maybe change this to that
-    let mut counter:u8 = 2u8;
+    let mut symbol_to:Vec<u32> = (2u32..symbol_count+2u32).collect();
+    let mut consecutive_symbols:Vec<u32> = change_symbols.clone();
+    let mut max_so_far:u32 = consecutive_symbols[0]; // This might always be 2u8, if so, maybe change this to that
+    let mut counter:u32 = 2u32;
     for i in 1..consecutive_symbols.len() {
         if consecutive_symbols[i] > max_so_far {
             counter += 1;
@@ -189,7 +198,7 @@ fn main() {
         *border_limits = ((min_x,min_y),(max_x,max_y));
     }
 
-    // TODO Maybe print borders, can be bit too much data, I dunno
+    // TODO Maybe print borders, might be bit too much data, I dunno
 
     let mut outline_img = image::open(path).unwrap().into_rgb();
 
@@ -259,7 +268,6 @@ fn main() {
         let path = format!("split/{}.png",i);
         symbol_images[i].save(path).unwrap();
     }
-    
 }
 
 #[allow(dead_code,non_snake_case)]
@@ -298,7 +306,7 @@ fn get_same_symbols(same_symbols:&Vec<Vec<bool>>) -> Vec<(usize,usize)> {
 
 // Nicely prints Vec<Vec<u8>> as matrix
 #[allow(dead_code,non_snake_case)]
-pub fn symbols_intial_prt(matrix:&Vec<Vec<u8>>) -> () {
+pub fn symbols_intial_prt(matrix:&Vec<Vec<u32>>) -> () {
 
     println!();
     let shape = (matrix.len(),matrix[0].len()); // shape[0],shape[1]=row,column
@@ -360,7 +368,7 @@ pub fn symbols_intial_prt(matrix:&Vec<Vec<u8>>) -> () {
     }
 }
 #[allow(dead_code,non_snake_case)]
-pub fn symbols_classified_prt(matrix:&Vec<Vec<u8>>) -> () {
+pub fn symbols_classified_prt(matrix:&Vec<Vec<u32>>) -> () {
 
     println!();
     let shape = (matrix.len(),matrix[0].len()); // shape[0],shape[1]=row,column
