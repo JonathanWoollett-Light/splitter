@@ -3,11 +3,11 @@ use std::path::Path;
 use itertools::izip;
 use std::env;
 use image::{ImageBuffer, Rgb,Luma};
-
+use image::imageops::FilterType;
 // Overall O'notation of 4n(ish) (n being image size=width*height)
 // I think that's pretty good.
 
-const B_SPACING:usize = 2usize; // Border space
+const B_SPACING:usize = 20usize; // Border space
 // Maximum number of intial symbols that can be identified (larger images and more complex symbols require a higher number)
 const MAX_SYMBOLS:usize = 1000usize;
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
@@ -266,7 +266,8 @@ fn main() {
 
     for i in 0..symbol_images.len() {
         let path = format!("split/{}.png",i);
-        symbol_images[i].save(path).unwrap();
+        let scaled_image = image::imageops::resize(&mut symbol_images[i],35,35,FilterType::Triangle);
+        scaled_image.save(path).unwrap();
     }
 }
 
