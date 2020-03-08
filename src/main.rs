@@ -47,9 +47,9 @@ fn main() {
     let mut same_symbols:Vec<Vec<bool>> = vec!(vec!(false;MAX_SYMBOLS);MAX_SYMBOLS);
     let symbol_count = get_intial_symbols(height,width,&mut symbols,&mut same_symbols);
     let mut links = get_links(&same_symbols);
-    let mut change_symbols = symbol_changes(symbol_count,&mut links);
+    let change_symbols = symbol_changes(symbol_count,&mut links);
     let (consecutive_symbols,counter) = make_symbols_consectutive(symbol_count,&change_symbols);
-    let mut pixels_in_symbols:Vec<Vec<(usize,usize)>> = unify_symbols(width,height,counter,&mut symbols,&change_symbols,&consecutive_symbols);
+    let pixels_in_symbols:Vec<Vec<(usize,usize)>> = unify_symbols(width,height,counter,&mut symbols,&change_symbols,&consecutive_symbols);
 
     if width <= 100 && height <= 200 {
         symbols_classified_prt(&symbols);
