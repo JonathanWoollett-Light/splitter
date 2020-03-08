@@ -13,6 +13,8 @@ const MAX_SYMBOLS:usize = 1000usize;
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
 const LUMA_BOUNDARY:u8 = 130u8; // Luma less than set to 0 and more than set to 255.
 
+
+// O(3n + some shit)
 fn main() {
     let args: Vec<String> = env::args().collect();
     let img_name = &args[1];
@@ -30,19 +32,7 @@ fn main() {
     let mut img_raw:Vec<u8> = img.clone().into_raw();
     
     // 2d vector of size of image, where each pixel will be labelled as to which symbol it belongs
-    let mut symbols:Vec<Vec<u32>> = vec!(vec!(1u32;height as usize);width as usize);
-    println!("width * height = length : {} * {} = {}|{}k|{}m",width,height,img_raw.len(),img_raw.len()/1000,img_raw.len()/1000000);
-    // Leave x=0 and y=0 borders as 1u8:alloc
-    //  It is not that not doing so would cause an error,
-    //  but rather that doing so has no affect.
-    for x in 1..width {
-        for y in 1..height {
-            let luma = img_raw[y*width+x];
-            img_raw[y*width+x] = if luma < LUMA_BOUNDARY { 0 } else { 255 };
-            symbols[x][y] = (img_raw[y*width+x] / 255) as u32;
-        }
-    }
-    println!("Converted image to binary");
+    let mut symbols:Vec<Vec<u32>> = to_bin2dvec(width,height,&mut img_raw);
 
     // Debug stuff to check binarisation worked:
     let check_img:ImageBuffer<Luma<u8>,Vec<u8>> = ImageBuffer::<Luma<u8>,Vec<u8>>::from_raw(width as u32,height as u32,img_raw).unwrap();
@@ -53,14 +43,56 @@ fn main() {
     if width <= 200 && height <= 400 {
         symbols_intial_prt(&symbols);
     }
-    
-    
     // Index [i][t] represents whether symbol i and symbol t link
-    let mut same_symbols:Vec<Vec<bool>> = vec!(vec!(false;MAX_SYMBOLS);MAX_SYMBOLS); 
-    // First symbol labelled as 2u8 since 1u8 is a white pixel.
-    let mut symbol_count:u32 = 2u32;
+    let mut same_symbols:Vec<Vec<bool>> = vec!(vec!(false;MAX_SYMBOLS);MAX_SYMBOLS);
+    let symbol_count = get_intial_symbols(height,width,&mut symbols,&mut same_symbols);
+    let mut links = get_links(&same_symbols);
+    let mut change_symbols = symbol_changes(symbol_count,&mut links);
+    let (consecutive_symbols,counter) = make_symbols_consectutive(symbol_count,&change_symbols);
+    let mut pixels_in_symbols:Vec<Vec<(usize,usize)>> = unify_symbols(width,height,counter,&mut symbols,&change_symbols,&consecutive_symbols);
+
+    if width <= 100 && height <= 200 {
+        symbols_classified_prt(&symbols);
+    }
+
+    // Set borders of symbols
+    let borders:Vec<((usize,usize),(usize,usize))> = set_borders(width,height,&path,&symbols,&pixels_in_symbols);
     
-    // Sets intial symbol pixels
+    // Create symbol images
+    let mut symbol_images:Vec<ImageBuffer<Luma<u8>,Vec<u8>>> = create_symbol_images(width,height,&symbols,&borders);
+
+    // Export symbol images
+    for i in 0..symbol_images.len() {
+        let path = format!("split/{}.png",i);
+        let mut scaled_image = image::imageops::resize(&mut symbol_images[i],35,35,FilterType::Triangle);
+        image::imageops::colorops::invert(&mut scaled_image);
+        scaled_image.save(path).unwrap();
+    }
+}
+
+#[allow(dead_code,non_snake_case)]
+fn prt_u8_vec__as_2d((width,height):(usize,usize),vec:&Vec<u8>) -> () {
+    println!();
+    let shape = (width,height); // shape[0],shape[1]=row,column
+    let spacing = 4*shape.0;
+    println!("┌ {:<1$}┐","─",spacing);
+    for row in 0..shape.1 {
+        print!("│ ");
+        for col in 0..shape.0 {
+            print!("{} ",vec[row*width+col]);
+            
+        }
+        println!("│");
+    }
+    println!("└ {:<1$}┘","─",spacing);
+    print!("{:<1$}","",(spacing/2)-1);
+    println!("[{},{}]",shape.0,shape.1);
+    println!();
+}
+
+
+fn get_intial_symbols(height:usize,width:usize,symbols:&mut Vec<Vec<u32>>,same_symbols:&mut Vec<Vec<bool>>) -> u32 {
+    let mut symbol_count:u32 = 2;
     for y in 1..height-1 {
         for x in 1..width-1 {
             if symbols[x][y] == 0 {
@@ -103,17 +135,29 @@ fn main() {
         }
     }
     symbol_count -= 2;
-    println!("symbol_count:  {}",symbol_count);
-    let mut symbols_filtered = get_same_symbols(&same_symbols);
-    println!("links:               {:.?}",symbols_filtered);
-
+    return symbol_count;
+}
+fn get_links(same_symbols:&Vec<Vec<bool>>) -> Vec<(usize,usize)> {
+    let mut links:Vec<(usize,usize)> = Vec::new();
+    for i in 0..same_symbols.len() {
+        for t in 0..same_symbols[i].len() { // same_symbols[a].len() === same_symbols[b].len()
+            if i != t && same_symbols[i][t] {
+                links.push((i,t))
+            }
+        }
+    }
+    println!();
+    return links;
+}
+// Gets vector of which symbols to change. Index=current symbol, value=symbol to change to.
+fn symbol_changes(symbol_count:u32,links:&mut Vec<(usize,usize)>) -> Vec<u32> {
     // Sets symbol number to unify pixels under
     // Sets all connected numbers to same number
     let mut change_symbols:Vec<u32> =  (2u32..symbol_count+2u32).collect();
     println!("initial symbols:     {:0>2.?}",change_symbols);
-    for i in 0..symbols_filtered.len() {
+    for i in 0..links.len() {
         // Gets lowest symbol in connection
-        let connection = symbols_filtered[i];
+        let connection = links[i];
         let (low,large) = if connection.0 < connection.1 { (connection.0,connection.1) } 
         else { (connection.1,connection.0) };
 
@@ -126,14 +170,16 @@ fn main() {
         }
 
         // Adjusts connections list
-        symbols_filtered[i] = (low,low);
-        for link in &mut symbols_filtered{
+        links[i] = (low,low);
+        for link in links.iter_mut() {
             if link.0 == large { link.0 = low; }
             if link.1 == large { link.1 = low; }
         }
     }
     println!("unified symbols:     {:0>2.?}",change_symbols);
-
+    return change_symbols;
+}
+fn make_symbols_consectutive(symbol_count:u32,change_symbols:&Vec<u32>) -> (Vec<u32>,u32) {
     // All symbols numbers are now covered by some range 2..x, rather than a series of numbers >=2
     let mut symbol_to:Vec<u32> = (2u32..symbol_count+2u32).collect();
     let mut consecutive_symbols:Vec<u32> = change_symbols.clone();
@@ -151,16 +197,14 @@ fn main() {
         }
     }
     println!("consecutive symbols: {:0>2.?}",consecutive_symbols);
-
+    return (consecutive_symbols,counter);
+}
+fn unify_symbols(width:usize,height:usize,counter:u32,symbols:&mut Vec<Vec<u32>>,change_symbols:&Vec<u32>,consecutive_symbols:&Vec<u32>) -> Vec<Vec<(usize,usize)>> {
     let mut pixels_in_symbols:Vec<Vec<(usize,usize)>> = vec!(Vec::new();(counter-1) as usize);
-
-    if width <= 100 && height <= 200 {
-        symbols_classified_prt(&symbols);
-    }
-
+    // O(n)
     // Unifies symbols and sets lists of pixels in each symbol
     for y in 0..height {
-        for x in 0.. width {
+        for x in 0..width {
             if symbols[x][y] != 1 {
                 let symbol_num = symbols[x][y] as usize - 2usize;
                 let new_symbol_num = consecutive_symbols[change_symbols[symbol_num] as usize - 2usize];
@@ -170,18 +214,28 @@ fn main() {
             }
         }
     }
-    // Since symbols values will often be >9 half size requirement to print
-    if width <= 100 && height <= 200 {
-        symbols_classified_prt(&symbols);
+    return pixels_in_symbols;
+}
+// Converts img raw into binary image which it returns as a 2d vector.
+fn to_bin2dvec(width:usize,height:usize,img_raw:&mut Vec<u8>) -> Vec<Vec<u32>> {
+    // 2d vector of size of image, where each pixel will be labelled as to which symbol it belongs
+    let mut symbols:Vec<Vec<u32>> = vec!(vec!(1u32;height as usize);width as usize);
+    println!("width * height = length : {} * {} = {}|{}k|{}m",width,height,img_raw.len(),img_raw.len()/1000,img_raw.len()/1000000);
+    // Leave x=0 and y=0 borders as 1u8:alloc
+    //  It is not that not doing so would cause an error,
+    //  but rather that doing so has no affect.
+    for x in 1..width {
+        for y in 1..height {
+            let luma = img_raw[y*width+x];
+            img_raw[y*width+x] = if luma < LUMA_BOUNDARY { 0 } else { 255 };
+            symbols[x][y] = (img_raw[y*width+x] / 255) as u32;
+        }
     }
-
-    // Removes empty lists (for symbols which where unified)
-    //pixels_in_symbols = pixels_in_symbols.into_iter().filter(|i| i.len()!=0).collect();
-    //println!("pixels_in_symbols:\n{:.?}",pixels_in_symbols);
-    
-    // Vec<((min_x,min_y),(max_x,max_y))>
+    println!("Converted image to binary");
+    return symbols;
+}
+fn set_borders(width:usize,height:usize,path:&Path,symbols:&Vec<Vec<u32>>,pixels_in_symbols:&Vec<Vec<(usize,usize)>>) -> Vec<((usize,usize),(usize,usize))>{
     let mut borders:Vec<((usize,usize),(usize,usize))> = vec!(((0usize,0usize),(0usize,0usize));pixels_in_symbols.len());
-
     println!("pixels_in_symbols.len(): {},",pixels_in_symbols.len());
 
     for (symbol,border_limits) in izip!(pixels_in_symbols,&mut borders) {
@@ -242,6 +296,9 @@ fn main() {
 
     outline_img.save("borders.png").unwrap();
     println!("borders: {:.?}",borders);
+    return borders;
+}
+fn create_symbol_images(width:usize,height:usize,symbols:&Vec<Vec<u32>>,borders:&Vec<((usize,usize),(usize,usize))>) -> Vec<ImageBuffer<Luma<u8>,Vec<u8>>> {
     let sizes:Vec<(usize,usize)> = borders.iter().map(|lims| ((lims.1).0-(lims.0).0+1,(lims.1).1-(lims.0).1+1)).collect();
     // Default constructs to all black pixels, thus we set symbol pixels to white in following loop
     // TODO Look into constructing with default white pixels and drawing black pixels
@@ -249,6 +306,7 @@ fn main() {
 
     println!("got here");
 
+    // O(n)
     // Draws symbol images
     for y in 0..height {
         for x in 0.. width {
@@ -261,49 +319,8 @@ fn main() {
             }
         }
     }
-
-    // TODO Need to scale symbol images
-
-    for i in 0..symbol_images.len() {
-        let path = format!("split/{}.png",i);
-        let scaled_image = image::imageops::resize(&mut symbol_images[i],35,35,FilterType::Triangle);
-        scaled_image.save(path).unwrap();
-    }
+    return symbol_images;
 }
-
-#[allow(dead_code,non_snake_case)]
-fn prt_u8_vec__as_2d((width,height):(usize,usize),vec:&Vec<u8>) -> () {
-    println!();
-    let shape = (width,height); // shape[0],shape[1]=row,column
-    let spacing = 4*shape.0;
-    println!("┌ {:<1$}┐","─",spacing);
-    for row in 0..shape.1 {
-        print!("│ ");
-        for col in 0..shape.0 {
-            print!("{} ",vec[row*width+col]);
-            
-        }
-        println!("│");
-    }
-    println!("└ {:<1$}┘","─",spacing);
-    print!("{:<1$}","",(spacing/2)-1);
-    println!("[{},{}]",shape.0,shape.1);
-    println!();
-}
-
-fn get_same_symbols(same_symbols:&Vec<Vec<bool>>) -> Vec<(usize,usize)> {
-    let mut links:Vec<(usize,usize)> = Vec::new();
-    for i in 0..same_symbols.len() {
-        for t in 0..same_symbols[i].len() { // same_symbols[a].len() === same_symbols[b].len()
-            if i != t && same_symbols[i][t] {
-                links.push((i,t))
-            }
-        }
-    }
-    println!();
-    return links;
-}
-
 
 // Nicely prints Vec<Vec<u8>> as matrix
 #[allow(dead_code,non_snake_case)]
