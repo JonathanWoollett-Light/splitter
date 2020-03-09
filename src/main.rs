@@ -4,7 +4,8 @@ use itertools::izip;
 use std::env;
 use image::{ImageBuffer, Rgb,Luma};
 use image::imageops::FilterType;
-use std::time::{Duration,Instant};
+use std::time::Instant;
+use std::collections::VecDeque;
 // Overall O'notation of 4n(ish) (n being image size=width*height)
 // I think that's pretty good.
 
@@ -12,7 +13,7 @@ const B_SPACING:usize = 20usize; // Border space
 // Maximum number of intial symbols that can be identified (larger images and more complex symbols require a higher number)
 const MAX_SYMBOLS:usize = 1000usize;
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
-const LUMA_BOUNDARY:u8 = 130u8; // Luma less than set to 0 and more than set to 255.
+const LUMA_BOUNDARY:u8 = 135u8; // Luma less than set to 0 and more than set to 255.
 
 
 // O(3n + some shit)
@@ -45,6 +46,7 @@ fn main() {
         symbols_intial_prt(&symbols);
     }
     sweep_segmentation(&path,width,height,&mut symbols);
+    //flood_segmentation(&path,width,height,&mut symbols);
 }
 
 #[allow(dead_code,non_snake_case)]
@@ -65,6 +67,157 @@ fn prt_u8_vec__as_2d((width,height):(usize,usize),vec:&Vec<u8>) -> () {
     print!("{:<1$}","",(spacing/2)-1);
     println!("[{},{}]",shape.0,shape.1);
     println!();
+}
+
+fn flood_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u32>>) {
+    let start = Instant::now();
+    let mut symbol_count = 2u32;
+    let mut pixels_in_symbols:Vec<Vec<(usize,usize)>> = Vec::new();
+    let start_flood = Instant::now();
+    for y in 0..height {
+        for x in 0..width {
+            if symbols[y][x] == 0 {
+                pixels_in_symbols.push(Vec::new());
+                let last_index = pixels_in_symbols.len()-1;
+                //flood_fill_recursive(symbols,symbol_count,width,height,x,y,&mut pixels_in_symbols[last_index]);
+                flood_fill_queue(symbols,symbol_count,width,height,x,y,&mut pixels_in_symbols[last_index]);
+                symbol_count += 1;
+            }
+        }
+    }
+    println!("{} : Flood finished",time(start_flood));
+    if width <= 200 && height <= 400 {
+        symbols_classified_prt(&symbols);
+    }
+
+    // Set borders of symbols
+    let borders = set_borders(symbols,&pixels_in_symbols,width,height,path);
+    // Create symbol images
+    let mut symbol_images:Vec<ImageBuffer<Luma<u8>,Vec<u8>>> = create_symbol_images(&pixels_in_symbols,&borders,width,height);
+    // Export symbol images
+    for i in 0..symbol_images.len() {
+        let path = format!("split/{}.png",i);
+        let mut scaled_image = image::imageops::resize(&mut symbol_images[i],35,35,FilterType::Triangle);
+        image::imageops::colorops::invert(&mut scaled_image);
+        scaled_image.save(path).unwrap();
+    }
+    println!("{} : Flood segmented",time(start));
+
+    fn flood_fill_queue(symbols:&mut Vec<Vec<u32>>,symbol_count:u32,width:usize,height:usize,x:usize,y:usize,pixels:&mut Vec<(usize,usize)>) {
+        pixels.push((x,y));
+        symbols[y][x] = symbol_count;
+        let mut queue:VecDeque<(usize,usize)> = VecDeque::new();
+        queue.push_back((x,y));
+        loop {
+            if let Some(n) = queue.pop_front() {
+                // +x
+                if n.0 < width-1 {
+                    let (x,y) = (n.0+1,n.1);
+                    if symbols[y][x] == 0 {
+                        pixels.push((x,y));
+                        symbols[y][x] = symbol_count;
+                        queue.push_back((x,y));
+                    }
+                }
+                // -x
+                if n.0 > 0 {
+                    let (x,y) = (n.0-1,n.1);
+                    if symbols[y][x] == 0 {
+                        pixels.push((x,y));
+                        symbols[y][x] = symbol_count;
+                        queue.push_back((x,y));
+                    }
+                }
+                // +y
+                if n.1 < height-1 {
+                    let (x,y) = (n.0,n.1+1);
+                    if symbols[y][x] == 0 {
+                        pixels.push((x,y));
+                        symbols[y][x] = symbol_count;
+                        queue.push_back((x,y));
+                    }
+                }
+                // -y
+                if n.1 > 0 {
+                    let (x,y) = (n.0,n.1-1);
+                    if symbols[y][x] == 0 {
+                        pixels.push((x,y));
+                        symbols[y][x] = symbol_count;
+                        queue.push_back((x,y));
+                    }
+                }
+            }
+            else { break; } // If queue empty break
+        }
+    }
+    fn set_borders(symbols:&mut Vec<Vec<u32>>,pixel_symbols:&Vec<Vec<(usize,usize)>>,width:usize,height:usize,path:&Path) -> Vec<((usize,usize),(usize,usize))> {
+        let start = Instant::now();
+        // Gets bounds
+        let mut border_bounds:Vec<((usize,usize),(usize,usize))> = Vec::new();
+        for symbol in pixel_symbols {
+            let mut lower_x = symbol.iter().fold(width, |min,x| (if x.0 < min { x.0 } else { min }));
+            let mut lower_y = symbol.iter().fold(height, |min,x| (if x.1 < min { x.1 } else { min }));
+            let mut upper_x = symbol.iter().fold(0usize, |max,x| (if x.0 > max { x.0 } else { max }));
+            let mut upper_y = symbol.iter().fold(0usize, |max,x| (if x.1 > max { x.1 } else { max }));
+
+            if lower_x >= B_SPACING { lower_x -= B_SPACING; };
+            if lower_y >= B_SPACING { lower_y -= B_SPACING; };
+            if upper_x + B_SPACING < width { upper_x += B_SPACING; };
+            if upper_y + B_SPACING < height { upper_y += B_SPACING; };
+
+            border_bounds.push(((lower_x,lower_y),(upper_x,upper_y)));
+        }
+        // Copies image
+        let mut border_img = image::open(path).unwrap().into_rgb();
+        for (x,y,pixel) in border_img.enumerate_pixels_mut() {
+            let val = if symbols[y as usize][x as usize] == 1 { 255 } else { 0 };
+            *pixel = image::Rgb([val,val,val]);
+        }
+
+        // Sets borders
+        let border_pixel = image::Rgb([255,0,0]); // Pixel to use as border
+        for symbol in border_bounds.iter() {
+            let min_x = (symbol.0).0;
+            let min_y = (symbol.0).1;
+            let max_x = (symbol.1).0;
+            let max_y = (symbol.1).1;
+            // Sets horizontal borders
+            for i in min_x..max_x {
+                *border_img.get_pixel_mut(i as u32,min_y as u32) = border_pixel;
+                *border_img.get_pixel_mut(i as u32,max_y as u32) = border_pixel;
+            }
+            // Sets vertical borders
+            for i in min_y..max_y {
+                *border_img.get_pixel_mut(min_x as u32,i as u32) = border_pixel;
+                *border_img.get_pixel_mut(max_x as u32,i as u32) = border_pixel;
+            }
+            // Sets bottom corner border
+            *border_img.get_pixel_mut(max_x as u32,max_y as u32) = border_pixel;
+        }
+        border_img.save("borders.png").unwrap();
+        println!("{} : Borders set",time(start));
+        return border_bounds;
+    }
+    fn create_symbol_images(pixels_in_symbols:&Vec<Vec<(usize,usize)>>,borders:&Vec<((usize,usize),(usize,usize))>,width:usize,height:usize) -> Vec<ImageBuffer<Luma<u8>,Vec<u8>>> {
+        let start = Instant::now();
+        let sizes:Vec<(usize,usize)> = borders.iter().map(|lims| ((lims.1).0-(lims.0).0+1,(lims.1).1-(lims.0).1+1)).collect();
+        // Default constructs to all black pixels, thus we set symbol pixels to white in following loop
+        // TODO Look into constructing with default white pixels and drawing black pixels
+        let mut symbol_images:Vec<ImageBuffer<Luma<u8>,Vec<u8>>> = sizes.iter().map(|size| ImageBuffer::<Luma<u8>,Vec<u8>>::new(size.0 as u32,size.1 as u32)).collect();
+        // O(n)
+        // Draws symbol images
+        for i in 0..pixels_in_symbols.len() {
+            let offset:(usize,usize) = borders[i].0;
+            for pixel in pixels_in_symbols[i].iter() {
+                let x = pixel.0;
+                let y = pixel.1;
+                let out_pixel = symbol_images[i].get_pixel_mut((x-offset.0) as u32,(y-offset.1) as u32);
+                *out_pixel = image::Luma([255]);
+            }
+        }
+        println!("{} : Created symbol images",time(start));
+        return symbol_images;
+    }
 }
 
 fn sweep_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u32>>) {
@@ -103,39 +256,39 @@ fn sweep_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
         for y in 1..height-1 {
             for x in 1..width-1 {
                 if symbols[x][y] == 0 {
-                    if symbols[x-1][y] != 1 {
-                        symbols[x][y] = symbols[x-1][y];
+                    if symbols[y][x-1] != 1 {
+                        symbols[y][x] = symbols[y][x-1];
                     }
-                    if symbols[x-1][y-1] != 1 {
+                    if symbols[y-1][x-1] != 1 {
                         // If adjacent pixel symbol:
                         //  If we have set pixel to symbol already: set similarity,
                         //  else set pixel to symbol
-                        if symbols[x][y] != 0 {
-                            same_symbols[symbols[x][y] as usize][symbols[x-1][y-1] as usize] = true;
+                        if symbols[y][x] != 0 {
+                            same_symbols[symbols[y][x] as usize][symbols[y-1][x-1] as usize] = true;
                         } 
-                        else { symbols[x][y] = symbols[x-1][y-1]; }
+                        else { symbols[y][x] = symbols[y-1][x-1]; }
                     }
-                    if symbols[x][y-1] != 1 {
+                    if symbols[y-1][x] != 1 {
                         // If adjacent pixel symbol:
                         //  If we have set pixel to symbol already: set similarity,
                         //  else set pixel to symbol
-                        if symbols[x][y] != 0 {
-                            same_symbols[symbols[x][y] as usize][symbols[x][y-1] as usize] = true;
+                        if symbols[y][x] != 0 {
+                            same_symbols[symbols[y][x] as usize][symbols[y-1][x] as usize] = true;
                         } 
-                        else { symbols[x][y] = symbols[x][y-1]; }
+                        else { symbols[y][x] = symbols[y-1][x]; }
                     }
-                    if symbols[x+1][y-1] != 1 {
+                    if symbols[y-1][x+1] != 1 {
                         // If adjacent pixel symbol:
                         //  If we have set pixel to symbol already: set similarity,
                         //  else set pixel to symbol
-                        if symbols[x][y] != 0 {
-                            same_symbols[symbols[x][y] as usize][symbols[x+1][y-1] as usize] = true;
+                        if symbols[y][x] != 0 {
+                            same_symbols[symbols[y][x] as usize][symbols[y-1][x+1] as usize] = true;
                         } 
-                        else { symbols[x][y] = symbols[x+1][y-1]; }
+                        else { symbols[y][x] = symbols[y-1][x+1]; }
                     }
                     // If we haven't assigned to symbol: set new symbol
-                    if symbols[x][y] == 0 {
-                        symbols[x][y] = symbol_count as u32;
+                    if symbols[y][x] == 0 {
+                        symbols[y][x] = symbol_count as u32;
                         symbol_count += 1u32;
                     }
                 }
@@ -318,21 +471,20 @@ fn sweep_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
     }
 }
 
-
 // Converts img raw into binary image which it returns as a 2d vector.
 fn to_bin2dvec(width:usize,height:usize,img_raw:&mut Vec<u8>) -> Vec<Vec<u32>> {
     // 2d vector of size of image, where each pixel will be labelled as to which symbol it belongs
     let start = Instant::now();
-    let mut symbols:Vec<Vec<u32>> = vec!(vec!(1u32;height as usize);width as usize);
+    let mut symbols:Vec<Vec<u32>> = vec!(vec!(1u32;width as usize);height as usize);
     println!("width * height = length : {} * {} = {}|{}k|{}m",width,height,img_raw.len(),img_raw.len()/1000,img_raw.len()/1000000);
     // Leave x=0 and y=0 borders as 1u8:alloc
     //  It is not that not doing so would cause an error,
     //  but rather that doing so has no affect.
-    for x in 1..width {
-        for y in 1..height {
+    for y in 0..height {
+        for x in 0..width {
             let luma = img_raw[y*width+x];
             img_raw[y*width+x] = if luma < LUMA_BOUNDARY { 0 } else { 255 };
-            symbols[x][y] = (img_raw[y*width+x] / 255) as u32;
+            symbols[y][x] = (img_raw[y*width+x] / 255) as u32;
         }
     }
     println!("{} : Converted image to binary",time(start));
@@ -362,7 +514,7 @@ pub fn symbols_intial_prt(matrix:&Vec<Vec<u32>>) -> () {
 
         print!("│");
         for col in 0..shape.0 {
-            if matrix[col][row] == 1 { print!("{}",WHITE_SPACE_SYMBOL); }
+            if matrix[col][row] == 1 { print!("{}",matrix[col][row]);/*print!("{}",WHITE_SPACE_SYMBOL);*/ }
             else { print!("{}",matrix[col][row]); }
             
             
