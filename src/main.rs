@@ -78,7 +78,6 @@ fn flood_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
             if symbols[y][x] == 0 {
                 pixels_in_symbols.push(Vec::new());
                 let last_index = pixels_in_symbols.len()-1;
-                //flood_fill_recursive(symbols,symbol_count,width,height,x,y,&mut pixels_in_symbols[last_index]);
                 flood_fill_queue(symbols,symbol_count,width,height,x,y,&mut pixels_in_symbols[last_index]);
                 symbol_count += 1;
             }
@@ -225,9 +224,6 @@ fn to_bin2dvec(width:usize,height:usize,img_raw:&mut Vec<u8>) -> Vec<Vec<u32>> {
     let start = Instant::now();
     let mut symbols:Vec<Vec<u32>> = vec!(vec!(1u32;width as usize);height as usize);
     println!("width * height = length : {} * {} = {}|{}k|{}m",width,height,img_raw.len(),img_raw.len()/1000,img_raw.len()/1000000);
-    // Leave x=0 and y=0 borders as 1u8:alloc
-    //  It is not that not doing so would cause an error,
-    //  but rather that doing so has no affect.
     for y in 0..height {
         for x in 0..width {
             let luma = img_raw[y*width+x];
