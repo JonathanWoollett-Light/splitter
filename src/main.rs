@@ -255,7 +255,7 @@ fn sweep_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
         let mut symbol_count:u32 = 2;
         for y in 1..height-1 {
             for x in 1..width-1 {
-                if symbols[x][y] == 0 {
+                if symbols[y][x] == 0 {
                     if symbols[y][x-1] != 1 {
                         symbols[y][x] = symbols[y][x-1];
                     }
@@ -369,10 +369,10 @@ fn sweep_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
         // Unifies symbols and sets lists of pixels in each symbol
         for y in 0..height {
             for x in 0..width {
-                if symbols[x][y] != 1 {
-                    let symbol_num = symbols[x][y] as usize - 2usize;
+                if symbols[y][x] != 1 {
+                    let symbol_num = symbols[y][x] as usize - 2usize;
                     let new_symbol_num = consecutive_symbols[change_symbols[symbol_num] as usize - 2usize];
-                    symbols[x][y] = new_symbol_num;
+                    symbols[y][x] = new_symbol_num;
                     pixels_in_symbols[new_symbol_num as usize - 2usize].push((x,y));
                     
                 }
@@ -405,7 +405,7 @@ fn sweep_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
     
         // Copies image
         for (x,y,pixel) in outline_img.enumerate_pixels_mut() {
-            let val = if symbols[x as usize][y as usize] == 1 { 255 } else { 0 };
+            let val = if symbols[y as usize][x as usize] == 1 { 255 } else { 0 };
             *pixel = image::Rgb([val,val,val]);
         }
     
@@ -457,8 +457,8 @@ fn sweep_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
         // Draws symbol images
         for y in 0..height {
             for x in 0.. width {
-                if symbols[x][y] != 1 {
-                    let symbol = symbols[x][y] as usize;
+                if symbols[y][x] != 1 {
+                    let symbol = symbols[y][x] as usize;
                     let offset:(usize,usize) = borders[symbol-2].0;
     
                     let pixel = symbol_images[symbol-2].get_pixel_mut((x-offset.0) as u32,(y-offset.1) as u32);
