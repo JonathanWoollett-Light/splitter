@@ -10,8 +10,6 @@ use std::collections::VecDeque;
 // I think that's pretty good.
 
 const B_SPACING:usize = 20usize; // Border space
-// Maximum number of intial symbols that can be identified (larger images and more complex symbols require a higher number)
-const MAX_SYMBOLS:usize = 1000usize;
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
 const LUMA_BOUNDARY:u8 = 135u8; // Luma less than set to 0 and more than set to 255.
 
@@ -84,6 +82,7 @@ fn flood_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
         }
     }
     println!("{} : Flood finished",time(start_flood));
+    
     if width <= 200 && height <= 400 {
         symbols_classified_prt(&symbols);
     }
@@ -237,9 +236,9 @@ fn to_bin2dvec(width:usize,height:usize,img_raw:&mut Vec<u8>) -> Vec<Vec<u32>> {
 
 fn time(instant:Instant) -> String {
     let mut millis = instant.elapsed().as_millis();
-    let seconds = (millis as f32 / 100f32).floor();
-    millis = millis % 100;
-    let time = format!("{:#02}:{:#02}",seconds,millis);
+    let seconds = (millis as f32 / 1000f32).floor();
+    millis = millis % 1000;
+    let time = format!("{:#02}:{:#03}",seconds,millis);
     return time;
 }
 
