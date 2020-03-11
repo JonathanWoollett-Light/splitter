@@ -13,7 +13,7 @@ use std::fs;
 
 const B_SPACING:usize = 20usize; // Border space
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
-const LUMA_BOUNDARY:u8 = 160u8; // Luma less than set to 0 and more than set to 255.
+const LUMA_ADJUSTMENT:u8 = 15u8; // Luma less than avg_luma-LUMA_ADJUSTMENT set to 0 or greater than set to 255.
 
 
 // O(3n + some shit)
@@ -231,10 +231,14 @@ fn to_bin2dvec(width:usize,height:usize,img_raw:&mut Vec<u8>) -> Vec<Vec<u32>> {
     let start = Instant::now();
     let mut symbols:Vec<Vec<u32>> = vec!(vec!(1u32;width as usize);height as usize);
     println!("width * height = length : {} * {} = {}|{}k|{}m",width,height,img_raw.len(),img_raw.len()/1000,img_raw.len()/1000000);
+    
+    let avg_luma:u8 = (img_raw.iter().fold(0u32,|sum,x| sum+*x as u32) / img_raw.len() as u32) as u8;
+    println!("avg_luma:{}",avg_luma);
+
     for y in 0..height {
         for x in 0..width {
             let luma = img_raw[y*width+x];
-            img_raw[y*width+x] = if luma < LUMA_BOUNDARY { 0 } else { 255 };
+            img_raw[y*width+x] = if luma < avg_luma-LUMA_ADJUSTMENT { 0 } else { 255 };
             symbols[y][x] = (img_raw[y*width+x] / 255) as u32;
         }
     }
