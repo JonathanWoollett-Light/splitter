@@ -6,12 +6,14 @@ use image::{ImageBuffer, Rgb,Luma};
 use image::imageops::FilterType;
 use std::time::Instant;
 use std::collections::VecDeque;
+use std::fs::File;
+use std::fs;
 // Overall O'notation of 4n(ish) (n being image size=width*height)
 // I think that's pretty good.
 
 const B_SPACING:usize = 20usize; // Border space
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
-const LUMA_BOUNDARY:u8 = 135u8; // Luma less than set to 0 and more than set to 255.
+const LUMA_BOUNDARY:u8 = 160u8; // Luma less than set to 0 and more than set to 255.
 
 
 // O(3n + some shit)
@@ -88,7 +90,7 @@ fn flood_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
     }
 
     // Set borders of symbols
-    let borders = set_borders(symbols,&pixels_in_symbols,width,height,path);
+    let (borders,bounds) = set_borders(symbols,&pixels_in_symbols,width,height,path);
     // Create symbol images
     let mut symbol_images:Vec<ImageBuffer<Luma<u8>,Vec<u8>>> = create_symbol_images(&pixels_in_symbols,&borders,width,height);
     // Export symbol images
@@ -98,6 +100,9 @@ fn flood_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
         image::imageops::colorops::invert(&mut scaled_image);
         scaled_image.save(path).unwrap();
     }
+    //Export bounds
+    let bounds_str = String::from(format!("{:.?}",bounds));
+    fs::write("splitInfo.txt",bounds_str).unwrap();
     println!("{} : Flood segmented",time(start));
 
     fn flood_fill_queue(symbols:&mut Vec<Vec<u32>>,symbol_count:u32,width:usize,height:usize,x:usize,y:usize,pixels:&mut Vec<(usize,usize)>) {
@@ -147,15 +152,18 @@ fn flood_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
             else { break; } // If queue empty break
         }
     }
-    fn set_borders(symbols:&mut Vec<Vec<u32>>,pixel_symbols:&Vec<Vec<(usize,usize)>>,width:usize,height:usize,path:&Path) -> Vec<((usize,usize),(usize,usize))> {
+    fn set_borders(symbols:&mut Vec<Vec<u32>>,pixel_symbols:&Vec<Vec<(usize,usize)>>,width:usize,height:usize,path:&Path) -> (Vec<((usize,usize),(usize,usize))>,Vec<((usize,usize),(usize,usize))>) {
         let start = Instant::now();
         // Gets bounds
         let mut border_bounds:Vec<((usize,usize),(usize,usize))> = Vec::new();
+        let mut bounds:Vec<((usize,usize),(usize,usize))> = Vec::new();
         for symbol in pixel_symbols {
             let mut lower_x = symbol.iter().fold(width, |min,x| (if x.0 < min { x.0 } else { min }));
             let mut lower_y = symbol.iter().fold(height, |min,x| (if x.1 < min { x.1 } else { min }));
             let mut upper_x = symbol.iter().fold(0usize, |max,x| (if x.0 > max { x.0 } else { max }));
             let mut upper_y = symbol.iter().fold(0usize, |max,x| (if x.1 > max { x.1 } else { max }));
+
+            bounds.push(((lower_x,lower_y),(upper_x,upper_y)));
 
             if lower_x >= B_SPACING { lower_x -= B_SPACING; };
             if lower_y >= B_SPACING { lower_y -= B_SPACING; };
@@ -193,7 +201,7 @@ fn flood_segmentation(path:&Path,width:usize,height:usize,symbols:&mut Vec<Vec<u
         }
         border_img.save("borders.png").unwrap();
         println!("{} : Borders set",time(start));
-        return border_bounds;
+        return (border_bounds,bounds);
     }
     fn create_symbol_images(pixels_in_symbols:&Vec<Vec<(usize,usize)>>,borders:&Vec<((usize,usize),(usize,usize))>,width:usize,height:usize) -> Vec<ImageBuffer<Luma<u8>,Vec<u8>>> {
         let start = Instant::now();
